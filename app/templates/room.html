@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>房间 {{ room_code }} - 德州扑克</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="/static/css/app.css?v=20260609-06">
+  </head>
+  <body class="app-body">
+    <main class="table-shell">
+      <header id="room-header" class="table-header">
+        <div>
+          <div class="eyebrow">房间</div>
+          <h1 id="room-code-label">{{ room_code }}</h1>
+        </div>
+        <div class="header-actions">
+          <span id="connection-status" class="status-chip">连接中</span>
+          <span id="viewer-chip" class="status-chip">旁观</span>
+          <button id="copy-room-link" type="button" class="ghost-button">复制链接</button>
+          <button id="new-identity" type="button" class="ghost-button">换身份</button>
+          <a href="/" class="ghost-button">大厅</a>
+        </div>
+      </header>
+
+      <section id="join-panel" class="join-panel hidden">
+        <label class="field">
+          <span>昵称</span>
+          <input id="join-nickname" maxlength="24" placeholder="输入游客昵称">
+        </label>
+        <button id="join-current-room" type="button" class="primary-button">进入房间</button>
+        <p id="join-error" class="error-line" role="alert"></p>
+      </section>
+
+      <section id="waiting-view" class="table-layout">
+        <section class="table-main">
+          <div class="score-strip">
+            <div><span>阶段</span><strong id="phase-label">等待</strong></div>
+            <div><span>状态</span><strong id="room-status">等待</strong></div>
+            <div><span>底池</span><strong id="pot-total">0</strong></div>
+            <div><span>当前下注</span><strong id="current-bet">0</strong></div>
+            <div><span>最小加注</span><strong id="min-raise">0</strong></div>
+            <div><span>盲注</span><strong id="blind-label">0 / 0</strong></div>
+          </div>
+
+          <section class="felt-table">
+            <div class="table-felt-inner">
+              <div id="actor-label" class="actor-label">等待玩家</div>
+              <div id="community-cards" class="community-cards"></div>
+              <div id="result-panel" class="result-panel"></div>
+            </div>
+          </section>
+
+          <section class="my-hand-panel">
+            <div>
+              <div class="eyebrow">我的手牌</div>
+              <div id="my-hand" class="my-hand"></div>
+            </div>
+            <div id="spectator-note" class="spectator-note">加入并坐下后可以参与下一局。</div>
+          </section>
+
+          <section>
+            <div class="section-title-row">
+              <div>
+                <div class="eyebrow">座位</div>
+                <h2 id="seat-count">0 / 20</h2>
+              </div>
+            </div>
+            <div id="seat-grid" class="seat-grid"></div>
+          </section>
+        </section>
+
+        <aside class="table-sidebar">
+          <section class="side-card">
+            <div class="eyebrow">牌桌控制</div>
+            <button id="ready-toggle" type="button" class="secondary-button">准备</button>
+            <button id="stand-up" type="button" class="secondary-button">站起</button>
+            <button type="button" class="secondary-button borrow-chips hidden">领取 5000 训练筹码</button>
+            <button id="add-bot" type="button" class="secondary-button">添加智能机器人</button>
+            <button id="start-game" type="button" class="primary-button">开始牌局</button>
+            <p id="table-error" class="error-line" role="alert"></p>
+          </section>
+
+          <section class="side-card">
+            <div class="eyebrow">玩家</div>
+            <div id="players-panel" class="players-panel"></div>
+          </section>
+
+          <section class="side-card">
+            <div class="section-title-row compact">
+              <div class="eyebrow">事件流</div>
+              <span id="revision-label" class="muted-text">版本 0</span>
+            </div>
+            <div id="event-log" class="event-log"></div>
+          </section>
+
+          <section class="side-card chat-card">
+            <div class="section-title-row compact">
+              <div class="eyebrow">聊天区</div>
+              <span class="muted-text">最近 100 条</span>
+            </div>
+            <div class="chat-list"></div>
+            <div class="chat-compose">
+              <input class="chat-input" maxlength="200" placeholder="输入消息">
+              <button type="button" class="chat-send">发送</button>
+            </div>
+          </section>
+        </aside>
+      </section>
+
+      <section id="game-view" class="game-view hidden">
+        <header class="game-topbar">
+          <div class="game-title-row">
+            <strong id="game-table-title">0人桌</strong>
+            <span id="game-hand-pill" class="game-pill">手牌 #0</span>
+            <span id="game-connection-status" class="game-connection"><i></i> 连接中</span>
+          </div>
+          <div class="game-top-actions">
+            <div class="sound-control" aria-label="音效控制">
+              <button id="sound-toggle" type="button" class="icon-button" aria-pressed="true">🔊</button>
+              <input id="sound-volume" type="range" min="0" max="1" step="0.05" value="0.45" aria-label="音效音量">
+            </div>
+            <button id="pause-game" type="button" class="pause-button">暂停</button>
+            <button id="end-game" type="button" class="end-button">结束</button>
+          </div>
+        </header>
+
+        <section class="game-layout">
+          <section class="game-table-stage">
+            <div class="game-felt">
+              <div id="table-player-pods" class="table-player-pods"></div>
+              <div id="card-animation-layer" class="card-animation-layer" aria-hidden="true"></div>
+
+              <div class="game-center">
+                <div id="game-actor-label" class="game-actor-label">等待行动</div>
+                <div id="game-pot-total" class="game-pot-badge">底池: 0</div>
+                <div id="game-community-cards" class="game-community-cards"></div>
+                <div id="game-result-panel" class="game-result-panel"></div>
+              </div>
+            </div>
+          </section>
+
+          <aside class="game-sidebar">
+            <section class="game-panel ai-panel">
+              <div class="game-panel-title">
+                <span>🤖 AI助手</span>
+                <label class="toggle">
+                  <input id="ai-toggle" type="checkbox" checked>
+                  <span></span>
+                  <em id="ai-toggle-label">开启</em>
+                </label>
+              </div>
+              <div class="ai-scroll">
+                <div class="ai-section-title">手牌强度</div>
+                <div id="ai-hand-label" class="ai-hand-label">等待手牌</div>
+                <div class="strength-row">
+                  <div class="strength-bar"><i id="ai-strength-bar"></i></div>
+                  <strong id="ai-percentile">Top --</strong>
+                </div>
+
+                <div class="ai-section-title">翻前评级</div>
+                <div class="ai-rating-grid">
+                  <div><span>排名</span><strong id="ai-rank">--</strong></div>
+                  <div><span>等级</span><strong id="ai-grade">--</strong></div>
+                </div>
+
+                <div class="ai-section-title">胜率估算</div>
+                <div class="win-rate-row">
+                  <span>vs 随机手牌</span>
+                  <b id="ai-win-rate">--%</b>
+                </div>
+                <div id="ai-summary" class="ai-summary">坐下并参与牌局后，AI 助手会分析你的手牌。</div>
+
+                <div class="ai-section-title">底池赔率分析</div>
+                <div id="ai-notes" class="ai-notes"></div>
+              </div>
+            </section>
+
+            <section class="game-panel bet-panel">
+              <div class="bet-meta-row">
+                <strong>下注金额</strong>
+                <span id="game-stack-label">有效筹码: 0</span>
+              </div>
+              <div class="amount-row">
+                <input id="action-amount" type="number" min="0" step="1" placeholder="输入金额">
+                <span id="amount-bb-label">(0 BB)</span>
+              </div>
+              <div id="bet-range-label" class="bet-range-label">范围: --</div>
+              <input id="action-slider" class="action-slider" type="range" min="0" max="0" value="0">
+              <div id="quick-bets" class="quick-bets"></div>
+
+              <div class="game-action-grid">
+                <button data-action="fold" class="action-button game-action secondary-fold">弃牌</button>
+                <button data-action="check" class="action-button game-action green-action">过牌</button>
+                <button data-action="call" class="action-button game-action blue-action">跟注</button>
+                <button data-action="bet" class="action-button game-action blue-action">下注</button>
+                <button data-action="raise" class="action-button game-action blue-action">加注</button>
+                <button data-action="all_in" class="action-button game-action red-action">全下</button>
+              </div>
+              <button id="use-time-card" type="button" class="time-card-button" disabled>时间卡 +30s（剩余 0）</button>
+              <button type="button" class="borrow-chips borrow-game-button hidden">领取 5000 训练筹码</button>
+              <p id="action-error" class="error-line" role="alert"></p>
+            </section>
+
+            <section class="game-panel chat-card game-chat-card">
+              <div class="game-panel-title">
+                <span>聊天区</span>
+                <em>最近 100 条</em>
+              </div>
+              <div class="chat-list"></div>
+              <div class="chat-compose">
+                <input class="chat-input" maxlength="200" placeholder="输入消息">
+                <button type="button" class="chat-send">发送</button>
+              </div>
+            </section>
+          </aside>
+        </section>
+
+        <section id="showdown-modal" class="showdown-backdrop hidden" aria-live="polite">
+          <div class="showdown-dialog">
+            <div class="showdown-trophy">♛</div>
+            <h2>本手牌结束</h2>
+
+            <div class="showdown-section">
+              <h3>公共牌</h3>
+              <div id="showdown-community" class="showdown-community"></div>
+            </div>
+
+            <div class="showdown-section showdown-pot-section">
+              <div class="showdown-pot-title">
+                <strong>底池</strong>
+                <span id="showdown-total-pot">$0</span>
+              </div>
+              <div id="showdown-pots" class="showdown-pots"></div>
+            </div>
+
+            <div class="showdown-section">
+              <h3>玩家手牌</h3>
+              <div id="showdown-hands" class="showdown-hands"></div>
+            </div>
+
+            <p id="showdown-note" class="showdown-note">慢慢看，准备好了就开始下一手</p>
+            <div class="showdown-controls">
+              <button id="showdown-ready" type="button" class="showdown-round hidden">准备</button>
+              <button id="showdown-next" type="button" class="showdown-next">▶ 下一手</button>
+              <button id="showdown-end" type="button" class="showdown-round danger">■</button>
+            </div>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <script>
+      window.HOLDEM_ROOM_CODE = "{{ room_code }}";
+    </script>
+    <script src="/static/js/room.js?v=20260609-06" defer></script>
+  </body>
+</html>

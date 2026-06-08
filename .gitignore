@@ -1,0 +1,38 @@
+# Python caches and build output
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# Virtual environments and local config
+.env
+.venv/
+venv/
+env/
+
+# Runtime logs and local process output
+*.log
+uvicorn*.log
+
+# Local database and Docker volumes
+*.sqlite
+*.sqlite3
+postgres_data/
+redis_data/
+
+# Generated QA screenshots
+*-screenshot.png
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
