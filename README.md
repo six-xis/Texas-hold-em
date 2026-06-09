@@ -4,9 +4,10 @@
 
 ## 功能状态
 
-- 游客昵称进入游戏，浏览器保存 `guest_id`
+- 支持注册唯一昵称，浏览器保存注册后的 `guest_id`
 - 创建房间、加入房间、离开房间
 - 首页显示最近房间列表，可快速加入
+- 每天本地时间 00:00 自动清理当天创建的房间
 - 每个房间最多 20 名成员、20 个座位
 - 坐下、站起、准备、房主开始游戏
 - 房主可以添加智能机器人，机器人自动入座、准备，并由服务端按简单策略行动
@@ -16,6 +17,7 @@
 - 每一手都正常比牌/结算；每 20 手进入一次阶段休息，需要重新准备
 - 手牌结束后显示比牌结果弹窗，包含公共牌、底池分配、赢家和摊牌手牌
 - 玩家输光后会获得 5000 训练筹码奖励，避免训练局因为 0 筹码无法继续下一手
+- 房间内显示净盈亏排名，按当前筹码减去初始带入和训练筹码奖励计算
 - 房间聊天区通过 WebSocket 实时同步，保留最近 100 条消息
 - FastAPI WebSocket 实时同步房间状态
 - 服务端权威处理发牌、行动顺序、下注、all-in、主池/边池和摊牌结算
@@ -28,6 +30,8 @@
 本项目的房间流程、事件流展示和客户端状态反馈参考了 [ainilili/ratel](https://github.com/ainilili/ratel) 的事件驱动设计思路。Ratel 使用 Apache-2.0 许可证。本项目没有复制其 Java 实现代码，而是在 FastAPI/WebSocket 架构下独立实现。
 
 当前 MVP 的实时房间状态保存在后端进程内存中。单容器/单进程本地联机可用；如果横向扩容，需要把 `RoomService` 状态迁移到 Redis 或数据库。
+
+注册昵称、房间状态和净盈亏排名目前也随 `RoomService` 保存在当前服务进程内存中。服务重启后会重置；如果需要长期保留账号和历史战绩，可以把注册用户和房间记录迁移到 PostgreSQL。
 
 ## 本地运行
 
@@ -82,6 +86,32 @@ docker compose down
 ```bash
 docker compose down -v
 ```
+
+## 配置
+
+配置项使用 `HOLDEM_` 前缀环境变量覆盖，例如：
+
+```text
+HOLDEM_DAILY_ROOM_CLEANUP_ENABLED=true
+HOLDEM_DAILY_ROOM_CLEANUP_TIMEZONE=Asia/Shanghai
+```
+
+默认每天 `Asia/Shanghai` 时间 `00:00` 清理当天创建的所有房间，并通过 WebSocket 通知房间内玩家返回大厅。
+
+## HTTP API 摘要
+
+- `POST /api/rooms/register`：注册唯一昵称，返回可复用的 `guest_id`。
+- `POST /api/rooms`：创建房间，注册用户可传入 `guest_id` 复用身份。
+- `POST /api/rooms/{room_code}/join`：加入房间，注册用户可传入 `guest_id` 复用身份。
+- `GET /api/rooms/{room_code}`：获取房间状态，响应内包含 `rankings` 净盈亏排名。
+
+净盈亏计算方式：
+
+```text
+net_chips = current_chips - (10000 + training_chips_awarded)
+```
+
+因此玩家输光后领取的 `5000` 训练筹码会计入带入成本，排名不会把奖励误算成盈利。
 
 ## 测试
 

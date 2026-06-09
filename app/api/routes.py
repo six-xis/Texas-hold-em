@@ -6,11 +6,13 @@ from app.schemas.room import (
     AddBotRequest,
     ChatMessageView,
     CreateRoomRequest,
+    GuestSessionView,
     JoinRoomRequest,
     LeaveRoomRequest,
     PauseGameRequest,
     PlayerActionRequest,
     ReadyRequest,
+    RegisterUserRequest,
     RoomEnvelope,
     RoomSummaryView,
     RoomStateView,
@@ -46,6 +48,23 @@ async def create_room(payload: CreateRoomRequest, request: Request) -> RoomEnvel
 
     await _broadcast(request, room)
     return service.envelope_for(room, guest)
+
+
+@router.post("/register", response_model=GuestSessionView, status_code=status.HTTP_201_CREATED)
+async def register_user(payload: RegisterUserRequest, request: Request) -> GuestSessionView:
+    service = _room_service(request)
+    try:
+        guest = service.register_user(nickname=payload.nickname)
+    except RoomServiceError as exc:
+        raise _http_error(exc) from exc
+
+    return GuestSessionView(
+        guest_id=guest.guest_id,
+        nickname=guest.nickname,
+        chips=guest.chips,
+        training_chips_awarded=guest.training_chips_awarded,
+        time_cards_remaining=guest.time_cards_remaining,
+    )
 
 
 @router.post("/{room_code}/join", response_model=RoomEnvelope)
@@ -320,6 +339,7 @@ def _http_error(exc: RoomServiceError) -> HTTPException:
     status_code = {
         "ROOM_NOT_FOUND": status.HTTP_404_NOT_FOUND,
         "ROOM_FULL": status.HTTP_409_CONFLICT,
+        "USER_ALREADY_EXISTS": status.HTTP_409_CONFLICT,
         "SEAT_OCCUPIED": status.HTTP_409_CONFLICT,
         "NOT_HOST": status.HTTP_403_FORBIDDEN,
         "NOT_IN_ROOM": status.HTTP_403_FORBIDDEN,

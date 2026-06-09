@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -49,6 +50,66 @@ def test_create_join_sit_ready_and_start_game() -> None:
     assert alice_view.ai_assistant.enabled is True
     assert alice_view.ai_assistant.hand_label
     assert any(event.type == "hand_started" for event in alice_view.event_log)
+
+
+def test_register_user_reserves_unique_nickname() -> None:
+    service = RoomService()
+
+    registered = service.register_user(nickname=" Alice ")
+
+    assert registered.nickname == "Alice"
+    assert registered.chips == 10000
+
+    with pytest.raises(RoomServiceError) as exc_info:
+        service.register_user(nickname="alice")
+    assert exc_info.value.code == "USER_ALREADY_EXISTS"
+
+    with pytest.raises(RoomServiceError) as exc_info:
+        service.create_room(nickname="Alice")
+    assert exc_info.value.code == "USER_ALREADY_EXISTS"
+
+    room, guest = service.create_room(nickname="ignored", guest_id=registered.guest_id)
+    assert guest.nickname == "Alice"
+    assert room.host_guest_id == registered.guest_id
+
+
+def test_rankings_compare_current_chips_to_total_buy_in() -> None:
+    service = RoomService()
+    room, alice = service.create_room(nickname="Alice")
+    room, bob = service.join_room(room_code=room.room_code, nickname="Bob")
+
+    room.members[alice.guest_id].chips = 5000
+    room.members[alice.guest_id].training_chips_awarded = 5000
+    room.members[bob.guest_id].chips = 13000
+
+    view = service.serialize_room(room, viewer_guest_id=alice.guest_id)
+
+    assert [entry.nickname for entry in view.rankings] == ["Bob", "Alice"]
+    assert view.rankings[0].net_chips == 3000
+    assert view.rankings[0].buy_in_chips == 10000
+    assert view.rankings[1].current_chips == 5000
+    assert view.rankings[1].buy_in_chips == 15000
+    assert view.rankings[1].net_chips == -10000
+
+
+def test_clear_rooms_created_on_uses_local_date() -> None:
+    service = RoomService()
+    room_today, _ = service.create_room(nickname="Today")
+    room_other, _ = service.create_room(nickname="Tomorrow")
+
+    room_today.created_at = datetime(2026, 6, 10, 15, 59, tzinfo=UTC)
+    room_other.created_at = datetime(2026, 6, 10, 16, 1, tzinfo=UTC)
+
+    removed = service.clear_rooms_created_on(
+        date(2026, 6, 10),
+        timezone=ZoneInfo("Asia/Shanghai"),
+    )
+
+    assert [room.room_code for room in removed] == [room_today.room_code]
+    assert service.list_rooms()[0].room_code == room_other.room_code
+    with pytest.raises(RoomServiceError) as exc_info:
+        service.get_room(room_today.room_code)
+    assert exc_info.value.code == "ROOM_NOT_FOUND"
 
 
 def test_room_enforces_twenty_member_limit() -> None:

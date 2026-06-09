@@ -18,6 +18,10 @@ class JoinRoomRequest(BaseModel):
     guest_id: str | None = None
 
 
+class RegisterUserRequest(BaseModel):
+    nickname: str = Field(min_length=1, max_length=24)
+
+
 class LeaveRoomRequest(BaseModel):
     guest_id: str
 
@@ -129,6 +133,18 @@ class ChatMessageView(BaseModel):
     is_system: bool = False
 
 
+class RankingEntryView(BaseModel):
+    rank: int
+    guest_id: str
+    nickname: str
+    seat_index: int | None = None
+    is_bot: bool = False
+    current_chips: int
+    buy_in_chips: int
+    training_chips_awarded: int = 0
+    net_chips: int
+
+
 class ViewerView(BaseModel):
     guest_id: str | None
     seat_index: int | None
@@ -166,6 +182,7 @@ class RoomStateView(BaseModel):
     viewer: ViewerView
     action_options: ActionOptionsView = Field(default_factory=ActionOptionsView)
     ai_assistant: AiAssistantView = Field(default_factory=AiAssistantView)
+    rankings: list[RankingEntryView] = Field(default_factory=list)
     event_log: list[RoomEventView] = Field(default_factory=list)
     chat_messages: list[ChatMessageView] = Field(default_factory=list)
     last_result: HandResultView | None = None

@@ -100,3 +100,23 @@ class WebSocketManager:
                 guest_id=guest_id,
                 websocket=websocket,
             )
+
+    async def broadcast_room_closed(self, *, room_code: str, message: str) -> None:
+        room_connections = self._connections.get(room_code, {})
+        payload = {
+            "type": "room_closed",
+            "payload": {"room_code": room_code, "message": message},
+        }
+
+        for guest_id, sockets in list(room_connections.items()):
+            for websocket in list(sockets):
+                try:
+                    await websocket.send_json(payload)
+                    await websocket.close(code=1000)
+                except RuntimeError:
+                    pass
+                self.disconnect(
+                    room_code=room_code,
+                    guest_id=guest_id,
+                    websocket=websocket,
+                )

@@ -19,6 +19,7 @@ let activeGuestId = params.get("guest_id") || sessionStorage.getItem(storageKeys
 let reconnectTimer = null;
 let countdownTimer = null;
 let heartbeatTimer = null;
+let shouldReconnect = true;
 const playedSoundEvents = new Set();
 
 if (params.has("guest_id") || params.has("new_player")) {
@@ -91,6 +92,7 @@ const elements = {
   betRangeLabel: document.querySelector("#bet-range-label"),
   quickBets: document.querySelector("#quick-bets"),
   borrowButtons: Array.from(document.querySelectorAll(".borrow-chips")),
+  rankingLists: Array.from(document.querySelectorAll(".ranking-list")),
   chatLists: Array.from(document.querySelectorAll(".chat-list")),
   chatInputs: Array.from(document.querySelectorAll(".chat-input")),
   chatSends: Array.from(document.querySelectorAll(".chat-send")),
@@ -256,6 +258,13 @@ function connect() {
       }
       return;
     }
+    if (message.type === "room_closed") {
+      shouldReconnect = false;
+      stopHeartbeat();
+      window.alert(message.payload?.message || "房间已清理。");
+      window.location.href = "/";
+      return;
+    }
     if (message.type === "action_error") {
       const messageText = message.payload?.message || "操作失败。";
       showActionError(messageText);
@@ -266,7 +275,9 @@ function connect() {
   socket.addEventListener("close", () => {
     setConnection("已断开");
     stopHeartbeat();
-    reconnectTimer = setTimeout(connect, 1300);
+    if (shouldReconnect) {
+      reconnectTimer = setTimeout(connect, 1300);
+    }
   });
 
   socket.addEventListener("error", () => {
@@ -344,7 +355,7 @@ function toggleSound() {
 }
 
 function updateSoundUi() {
-  elements.soundToggle.textContent = soundManager.enabled && soundManager.volume > 0 ? "🔊" : "🔇";
+  elements.soundToggle.textContent = soundManager.enabled && soundManager.volume > 0 ? "音效" : "静音";
   elements.soundToggle.setAttribute("aria-pressed", String(soundManager.enabled));
   elements.soundVolume.value = String(soundManager.volume);
   elements.soundVolume.disabled = !soundManager.enabled;
@@ -525,6 +536,7 @@ function renderState() {
   }
   setViewerChip();
   renderBorrowControls();
+  renderRankings();
   renderChat();
 }
 
@@ -1072,6 +1084,7 @@ function renderQuickBets(quickBets) {
     const button = document.createElement("button");
     button.type = "button";
     button.textContent = label;
+    button.dataset.amount = String(amount);
     button.addEventListener("click", () => {
       elements.actionAmount.value = String(amount);
       elements.actionSlider.value = String(amount);
@@ -1079,12 +1092,18 @@ function renderQuickBets(quickBets) {
     });
     elements.quickBets.appendChild(button);
   }
+  updateQuickBetSelection();
 }
 
 function updateActionButtons(legal, options) {
+  const controlsEnabled = state.viewer.can_act && !state.is_paused;
+  const primaryAction = primaryActionFor(legal);
   for (const button of elements.actionButtons) {
     const action = button.dataset.action;
-    button.disabled = !state.viewer.can_act || state.is_paused || !legal.has(action);
+    const isLegal = legal.has(action);
+    button.disabled = !controlsEnabled || !isLegal;
+    button.classList.toggle("is-action-hidden", controlsEnabled && !isLegal);
+    button.classList.toggle("is-primary-action", controlsEnabled && isLegal && action === primaryAction);
     if (action === "call") {
       button.textContent = `跟注 ${formatChips(options.to_call || 0)}`;
     } else if (action === "bet") {
@@ -1099,6 +1118,15 @@ function updateActionButtons(legal, options) {
       button.textContent = actionLabel(action);
     }
   }
+}
+
+function primaryActionFor(legal) {
+  for (const action of ["check", "call", "bet", "raise"]) {
+    if (legal.has(action)) {
+      return action;
+    }
+  }
+  return "";
 }
 
 function renderPlayers() {
@@ -1116,6 +1144,41 @@ function renderPlayers() {
       <strong>${formatChips(player.chips)}</strong>
     `;
     elements.playersPanel.appendChild(row);
+  }
+}
+
+function renderRankings() {
+  const rankings = state.rankings || [];
+  for (const list of elements.rankingLists) {
+    if (!rankings.length) {
+      list.innerHTML = `<div class="empty-text">暂无排名。</div>`;
+      continue;
+    }
+
+    list.innerHTML = "";
+    for (const entry of rankings) {
+      const row = document.createElement("div");
+      row.className = [
+        "ranking-row",
+        entry.net_chips > 0 ? "positive" : "",
+        entry.net_chips < 0 ? "negative" : "",
+      ].join(" ");
+      const seatLabel = entry.seat_index == null ? "旁观" : `${entry.seat_index + 1} 号`;
+      row.innerHTML = `
+        <div class="ranking-main">
+          <span class="ranking-rank">#${entry.rank}</span>
+          <div class="min-w-0">
+            <strong>${escapeHtml(entry.nickname || "玩家")}</strong>
+            <em>${seatLabel}${entry.is_bot ? " / 机器人" : ""}</em>
+          </div>
+        </div>
+        <div class="ranking-score">
+          <strong>${formatSignedChips(entry.net_chips)}</strong>
+          <span>${formatChips(entry.current_chips)} / ${formatChips(entry.buy_in_chips)}</span>
+        </div>
+      `;
+      list.appendChild(row);
+    }
   }
 }
 
@@ -1152,12 +1215,29 @@ function renderWaitingControls() {
   const isJoined = Boolean(activeGuestId);
   const isSitting = Boolean(mySeat);
   const isPlaying = state.status === "playing";
+  const seatedPlayers = state.seats.filter((seat) => seat.guest_id && Number(seat.chips || 0) > 0);
+  const readyCount = seatedPlayers.filter((seat) => seat.is_ready).length;
+  const enoughReadyPlayers = readyCount >= 2;
+  const allRequiredReady = !state.ready_break_required || seatedPlayers.every((seat) => seat.is_ready);
+  const canStartGame = state.viewer.is_host && !isPlaying && enoughReadyPlayers && allRequiredReady;
 
   elements.readyToggle.disabled = !isJoined || !isSitting || isPlaying;
   elements.readyToggle.textContent = mySeat?.is_ready ? "取消准备" : "准备";
+  elements.readyToggle.classList.toggle("is-ready", Boolean(mySeat?.is_ready));
   elements.standUp.disabled = !isJoined || !isSitting || isPlaying;
   elements.addBot.disabled = !state.viewer.is_host || isPlaying;
-  elements.startGame.disabled = !state.viewer.is_host || isPlaying;
+  elements.startGame.disabled = !canStartGame;
+  if (!state.viewer.is_host) {
+    elements.startGame.textContent = "等待房主开局";
+  } else if (isPlaying) {
+    elements.startGame.textContent = "牌局进行中";
+  } else if (!enoughReadyPlayers) {
+    elements.startGame.textContent = `已准备 ${readyCount}/2`;
+  } else if (!allRequiredReady) {
+    elements.startGame.textContent = "等待全部准备";
+  } else {
+    elements.startGame.textContent = "开始牌局";
+  }
 }
 
 function renderBorrowControls() {
@@ -1414,8 +1494,16 @@ function showTableError(message) {
 function syncAmountUi() {
   const value = Number(elements.actionAmount.value || 0);
   elements.amountBbLabel.textContent = `(${(value / Math.max(1, state?.big_blind || 1)).toFixed(1)} BB)`;
+  updateQuickBetSelection();
   if (state) {
     updateActionButtons(new Set(state.viewer.legal_actions), state.action_options || {});
+  }
+}
+
+function updateQuickBetSelection() {
+  const value = Number(elements.actionAmount.value || 0);
+  for (const button of elements.quickBets.querySelectorAll("button[data-amount]")) {
+    button.classList.toggle("is-selected", Number(button.dataset.amount) === value);
   }
 }
 
@@ -1505,6 +1593,17 @@ function parseCard(card) {
 
 function formatChips(value) {
   return new Intl.NumberFormat("zh-CN").format(value || 0);
+}
+
+function formatSignedChips(value) {
+  const amount = Number(value || 0);
+  if (amount > 0) {
+    return `+${formatChips(amount)}`;
+  }
+  if (amount < 0) {
+    return `-${formatChips(Math.abs(amount))}`;
+  }
+  return "0";
 }
 
 function formatTime(value) {

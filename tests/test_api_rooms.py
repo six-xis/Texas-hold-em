@@ -72,6 +72,34 @@ def test_http_room_lifecycle() -> None:
     assert state["seats"][1]["position_label"] == "BB"
     assert len(state["seats"][0]["hole_cards"]) == 2
     assert state["seats"][1]["hole_cards"] == ["hidden", "hidden"]
+    assert state["rankings"][0]["buy_in_chips"] == 10000
+
+
+def test_http_register_rejects_duplicate_nickname_and_can_create_room() -> None:
+    client = make_client()
+
+    register_response = client.post("/api/rooms/register", json={"nickname": "Alice"})
+
+    assert register_response.status_code == 201
+    registered = register_response.json()
+    assert registered["nickname"] == "Alice"
+    assert registered["guest_id"]
+
+    duplicate_response = client.post("/api/rooms/register", json={"nickname": "alice"})
+    assert duplicate_response.status_code == 409
+    assert duplicate_response.json()["detail"]["code"] == "USER_ALREADY_EXISTS"
+
+    reserved_name_response = client.post("/api/rooms", json={"nickname": "Alice"})
+    assert reserved_name_response.status_code == 409
+
+    create_response = client.post(
+        "/api/rooms",
+        json={"nickname": "ignored", "guest_id": registered["guest_id"]},
+    )
+    assert create_response.status_code == 201
+    created = create_response.json()
+    assert created["guest"]["nickname"] == "Alice"
+    assert created["room"]["rankings"][0]["nickname"] == "Alice"
 
 
 def test_http_room_can_enable_ai_assistant_by_default() -> None:

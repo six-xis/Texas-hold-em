@@ -24,6 +24,7 @@ def test_index_page_renders_lobby() -> None:
     assert response.status_code == 200
     assert "德州扑克" in response.text
     assert "创建房间" in response.text
+    assert "注册昵称" in response.text
     assert "开启 AI 助手" in response.text
     assert "房主控制本房间 AI 助手" in response.text
     assert "ai-default" in response.text
@@ -44,6 +45,8 @@ def test_room_page_renders_game_shell() -> None:
     assert "AI助手" in response.text
     assert "下注金额" in response.text
     assert "聊天区" in response.text
+    assert "净盈亏" in response.text
+    assert "ranking-list" in response.text
     assert "showdown-modal" in response.text
     assert "card-animation-layer" in response.text
     assert "sound-volume" in response.text

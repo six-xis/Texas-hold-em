@@ -5,23 +5,29 @@ const bigBlindInput = document.querySelector("#big-blind");
 const aiDefaultInput = document.querySelector("#ai-default");
 const createButton = document.querySelector("#create-room");
 const joinButton = document.querySelector("#join-room");
+const registerButton = document.querySelector("#register-user");
 const refreshRoomsButton = document.querySelector("#refresh-rooms");
 const roomList = document.querySelector("#room-list");
 const errorBox = document.querySelector("#lobby-error");
+const registrationStatus = document.querySelector("#registration-status");
 
 const STORAGE = {
   nickname: "holdem.nickname",
   guestId: "holdem.guest_id",
+  registeredGuestId: "holdem.registered_guest_id",
 };
 
 nicknameInput.value = localStorage.getItem(STORAGE.nickname) || "";
+renderRegistrationStatus();
 
 createButton.addEventListener("click", () => createRoom());
 joinButton.addEventListener("click", () => joinRoomFromInput());
+registerButton.addEventListener("click", () => registerUser());
 refreshRoomsButton.addEventListener("click", () => loadRooms());
 roomCodeInput.addEventListener("input", () => {
   roomCodeInput.value = roomCodeInput.value.toUpperCase();
 });
+nicknameInput.addEventListener("input", () => renderRegistrationStatus());
 
 loadRooms();
 setInterval(loadRooms, 5000);
@@ -42,7 +48,7 @@ async function createRoom() {
   await withBusy(async () => {
     const envelope = await postJson("/api/rooms", {
       nickname,
-      guest_id: null,
+      guest_id: currentGuestId(),
       small_blind: smallBlind,
       big_blind: bigBlind,
       ai_enabled_by_default: Boolean(aiDefaultInput?.checked),
@@ -71,10 +77,32 @@ async function joinRoom(roomCode) {
   await withBusy(async () => {
     const envelope = await postJson(`/api/rooms/${encodeURIComponent(roomCode)}/join`, {
       nickname,
-      guest_id: null,
+      guest_id: currentGuestId(),
     });
     persistGuest(envelope);
     goToRoom(envelope.room.room_code, envelope.guest.guest_id);
+  });
+}
+
+async function registerUser() {
+  const nickname = requireNickname();
+  if (!nickname) {
+    return;
+  }
+
+  const existingGuestId = localStorage.getItem(STORAGE.registeredGuestId);
+  if (existingGuestId && localStorage.getItem(STORAGE.nickname) === nickname) {
+    renderRegistrationStatus("已注册，创建或加入房间会使用这个身份。");
+    return;
+  }
+
+  await withBusy(async () => {
+    const guest = await postJson("/api/rooms/register", {nickname});
+    localStorage.setItem(STORAGE.nickname, guest.nickname);
+    localStorage.setItem(STORAGE.registeredGuestId, guest.guest_id);
+    sessionStorage.setItem(STORAGE.guestId, guest.guest_id);
+    nicknameInput.value = guest.nickname;
+    renderRegistrationStatus("注册成功，昵称已锁定。");
   });
 }
 
@@ -132,6 +160,9 @@ function requireNickname() {
 
 function persistGuest(envelope) {
   localStorage.setItem(STORAGE.nickname, envelope.guest.nickname);
+  if (currentGuestId() === envelope.guest.guest_id) {
+    localStorage.setItem(STORAGE.registeredGuestId, envelope.guest.guest_id);
+  }
   sessionStorage.setItem(STORAGE.guestId, envelope.guest.guest_id);
   sessionStorage.setItem(`holdem.room.${envelope.room.room_code}.guest_id`, envelope.guest.guest_id);
 }
@@ -178,10 +209,27 @@ async function withBusy(task) {
 function setBusy(isBusy) {
   createButton.disabled = isBusy;
   joinButton.disabled = isBusy;
+  registerButton.disabled = isBusy;
 }
 
 function showError(message) {
   errorBox.textContent = message;
+}
+
+function currentGuestId() {
+  return localStorage.getItem(STORAGE.registeredGuestId) || null;
+}
+
+function renderRegistrationStatus(message = "") {
+  if (message) {
+    registrationStatus.textContent = message;
+    return;
+  }
+  const registeredGuestId = localStorage.getItem(STORAGE.registeredGuestId);
+  const registeredNickname = localStorage.getItem(STORAGE.nickname);
+  registrationStatus.textContent = registeredGuestId && registeredNickname
+    ? `已注册：${registeredNickname}`
+    : "注册后可防止昵称重复。";
 }
 
 function statusLabel(status) {

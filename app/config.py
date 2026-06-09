@@ -15,6 +15,8 @@ class Settings(BaseSettings):
     init_db: bool = False
     init_db_retries: int = 20
     init_db_retry_seconds: float = 1.0
+    daily_room_cleanup_enabled: bool = True
+    daily_room_cleanup_timezone: str = "Asia/Shanghai"
 
     model_config = SettingsConfigDict(env_file=".env", env_prefix="HOLDEM_")
 

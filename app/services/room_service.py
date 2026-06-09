@@ -3,7 +3,7 @@ from __future__ import annotations
 import random
 import string
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta, tzinfo
 from enum import Enum
 from threading import RLock
 from uuid import uuid4
@@ -31,6 +31,7 @@ from app.schemas.room import (
     AiAssistantView,
     ChatMessageView,
     GuestSessionView,
+    RankingEntryView,
     RoomEventView,
     RoomEnvelope,
     RoomStateView,
@@ -70,6 +71,13 @@ class GuestUser:
     is_connected: bool = True
     joined_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     last_seen_at: datetime = field(default_factory=lambda: datetime.now(UTC))
+
+
+@dataclass(slots=True)
+class RegisteredUser:
+    guest_id: str
+    nickname: str
+    created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
 
 @dataclass(slots=True)
@@ -152,7 +160,28 @@ class RoomService:
         self._max_members = max_members
         self._max_seats = max_seats
         self._rooms_by_code: dict[str, Room] = {}
+        self._registered_users_by_name: dict[str, RegisteredUser] = {}
+        self._registered_users_by_id: dict[str, RegisteredUser] = {}
         self._lock = RLock()
+
+    def register_user(self, *, nickname: str) -> GuestUser:
+        normalized_nickname = self._session_service.normalize_nickname(nickname)
+        nickname_key = self._nickname_key(normalized_nickname)
+        with self._lock:
+            if nickname_key in self._registered_users_by_name:
+                raise RoomServiceError("USER_ALREADY_EXISTS", "这个昵称已经注册，请换一个")
+
+            registered = RegisteredUser(
+                guest_id=self._session_service.create_guest_id(),
+                nickname=normalized_nickname,
+            )
+            self._registered_users_by_name[nickname_key] = registered
+            self._registered_users_by_id[registered.guest_id] = registered
+            return GuestUser(
+                guest_id=registered.guest_id,
+                nickname=registered.nickname,
+                chips=self._session_service.initial_chips,
+            )
 
     def create_room(
         self,
@@ -285,7 +314,12 @@ class RoomService:
             room = self.get_room(room_code)
             if guest_id and guest_id in room.members:
                 guest = room.members[guest_id]
-                guest.nickname = self._session_service.normalize_nickname(nickname)
+                registered = self._registered_users_by_id.get(guest_id)
+                guest.nickname = (
+                    registered.nickname
+                    if registered
+                    else self._session_service.normalize_nickname(nickname)
+                )
                 guest.is_connected = True
                 guest.last_seen_at = datetime.now(UTC)
                 self._append_event(room, "player_reconnected", f"{guest.nickname} 已重新连接")
@@ -630,6 +664,7 @@ class RoomService:
                 viewer=viewer,
                 action_options=self._viewer_action_options(room, viewer_seat),
                 ai_assistant=self._viewer_ai_assistant(room, viewer_seat),
+                rankings=self._ranking_entries(room),
                 event_log=[
                     RoomEventView(
                         id=event.id,
@@ -670,6 +705,15 @@ class RoomService:
                 )
             ][:20]
 
+    def clear_rooms_created_on(self, target_date: date, *, timezone: tzinfo) -> list[Room]:
+        with self._lock:
+            removed_rooms: list[Room] = []
+            for room_code, room in list(self._rooms_by_code.items()):
+                if room.created_at.astimezone(timezone).date() == target_date:
+                    removed_rooms.append(room)
+                    del self._rooms_by_code[room_code]
+            return removed_rooms
+
     def envelope_for(self, room: Room, guest: GuestUser) -> RoomEnvelope:
         return RoomEnvelope(
             guest=GuestSessionView(
@@ -684,11 +728,24 @@ class RoomService:
 
     def _build_guest(self, *, nickname: str, guest_id: str | None) -> GuestUser:
         normalized_nickname = self._session_service.normalize_nickname(nickname)
+        if guest_id and guest_id in self._registered_users_by_id:
+            registered = self._registered_users_by_id[guest_id]
+            normalized_nickname = registered.nickname
+        else:
+            existing_registered = self._registered_users_by_name.get(
+                self._nickname_key(normalized_nickname)
+            )
+            if existing_registered is not None and existing_registered.guest_id != guest_id:
+                raise RoomServiceError("USER_ALREADY_EXISTS", "这个昵称已经注册，请先使用注册身份")
         return GuestUser(
             guest_id=guest_id or self._session_service.create_guest_id(),
             nickname=normalized_nickname,
             chips=self._session_service.initial_chips,
         )
+
+    @staticmethod
+    def _nickname_key(nickname: str) -> str:
+        return nickname.casefold()
 
     def _generate_room_code(self) -> str:
         alphabet = string.ascii_uppercase + string.digits
@@ -1216,6 +1273,62 @@ class RoomService:
                 viewer_guest_id=viewer_guest_id,
             ),
         )
+
+    def _ranking_entries(self, room: Room) -> list[RankingEntryView]:
+        ranked_members: list[tuple[int, int, datetime, GuestUser, int | None, int, int]] = []
+        for guest in room.members.values():
+            seat = room.seat_for_guest(guest.guest_id)
+            current_chips = self._current_member_chips(room, guest)
+            buy_in_chips = self._session_service.initial_chips + guest.training_chips_awarded
+            net_chips = current_chips - buy_in_chips
+            ranked_members.append(
+                (
+                    net_chips,
+                    current_chips,
+                    guest.joined_at,
+                    guest,
+                    seat.seat_index if seat else None,
+                    buy_in_chips,
+                    guest.training_chips_awarded,
+                )
+            )
+
+        ranked_members.sort(
+            key=lambda item: (-item[0], -item[1], item[2], item[3].nickname.casefold())
+        )
+
+        entries: list[RankingEntryView] = []
+        previous_score: tuple[int, int] | None = None
+        current_rank = 0
+        for index, item in enumerate(ranked_members, start=1):
+            net_chips, current_chips, _, guest, seat_index, buy_in_chips, training_chips_awarded = item
+            score = (net_chips, current_chips)
+            if score != previous_score:
+                current_rank = index
+                previous_score = score
+            entries.append(
+                RankingEntryView(
+                    rank=current_rank,
+                    guest_id=guest.guest_id,
+                    nickname=guest.nickname,
+                    seat_index=seat_index,
+                    is_bot=guest.is_bot,
+                    current_chips=current_chips,
+                    buy_in_chips=buy_in_chips,
+                    training_chips_awarded=training_chips_awarded,
+                    net_chips=net_chips,
+                )
+            )
+        return entries
+
+    def _current_member_chips(self, room: Room, guest: GuestUser) -> int:
+        if room.current_game is None:
+            return guest.chips
+
+        for game_seat in room.current_game.seats:
+            if game_seat.player_id == guest.guest_id:
+                return game_seat.chips + game_seat.total_committed
+        return guest.chips
 
     def serialize_chat_message(self, message: ChatMessage) -> ChatMessageView:
         return ChatMessageView(

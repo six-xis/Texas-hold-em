@@ -30,6 +30,8 @@ redis_data/
 
 # Generated QA screenshots
 *-screenshot.png
+qa-screenshots/
+design-qa.md
 
 # OS/editor files
 .DS_Store

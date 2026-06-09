@@ -5,14 +5,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>房间 {{ room_code }} - 德州扑克</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="/static/css/app.css?v=20260609-06">
+    <link rel="stylesheet" href="/static/css/app.css?v=20260610-01">
   </head>
   <body class="app-body">
     <main class="table-shell">
       <header id="room-header" class="table-header">
-        <div>
+        <div class="room-title-block">
           <div class="eyebrow">房间</div>
           <h1 id="room-code-label">{{ room_code }}</h1>
+          <p>设置完成后，点击「开始牌局」进入沉浸对局。</p>
         </div>
         <div class="header-actions">
           <span id="connection-status" class="status-chip">连接中</span>
@@ -72,18 +73,44 @@
 
         <aside class="table-sidebar">
           <section class="side-card">
-            <div class="eyebrow">牌桌控制</div>
-            <button id="ready-toggle" type="button" class="secondary-button">准备</button>
-            <button id="stand-up" type="button" class="secondary-button">站起</button>
-            <button type="button" class="secondary-button borrow-chips hidden">领取 5000 训练筹码</button>
-            <button id="add-bot" type="button" class="secondary-button">添加智能机器人</button>
-            <button id="start-game" type="button" class="primary-button">开始牌局</button>
+            <div class="side-card-title">
+              <div>
+                <div class="eyebrow">牌桌控制</div>
+                <strong>准备区</strong>
+              </div>
+            </div>
+            <div class="control-stack">
+              <button id="ready-toggle" type="button" class="primary-button ready-action">准备</button>
+              <div class="control-secondary-row">
+                <button id="stand-up" type="button" class="secondary-button">站起</button>
+                <button type="button" class="secondary-button borrow-chips hidden">领取 5000 训练筹码</button>
+              </div>
+              <div class="host-control-group">
+                <button id="add-bot" type="button" class="secondary-button">添加智能机器人</button>
+                <button id="start-game" type="button" class="primary-button host-start-button">开始牌局</button>
+              </div>
+            </div>
             <p id="table-error" class="error-line" role="alert"></p>
           </section>
 
           <section class="side-card">
-            <div class="eyebrow">玩家</div>
+            <div class="side-card-title">
+              <div>
+                <div class="eyebrow">玩家</div>
+                <strong>当前成员</strong>
+              </div>
+            </div>
             <div id="players-panel" class="players-panel"></div>
+          </section>
+
+          <section class="side-card ranking-card">
+            <div class="side-card-title">
+              <div>
+                <div class="eyebrow">排名</div>
+                <strong>净盈亏</strong>
+              </div>
+            </div>
+            <div class="ranking-list"></div>
           </section>
 
           <section class="side-card">
@@ -117,7 +144,7 @@
           </div>
           <div class="game-top-actions">
             <div class="sound-control" aria-label="音效控制">
-              <button id="sound-toggle" type="button" class="icon-button" aria-pressed="true">🔊</button>
+              <button id="sound-toggle" type="button" class="icon-button" aria-pressed="true">音效</button>
               <input id="sound-volume" type="range" min="0" max="1" step="0.05" value="0.45" aria-label="音效音量">
             </div>
             <button id="pause-game" type="button" class="pause-button">暂停</button>
@@ -143,7 +170,7 @@
           <aside class="game-sidebar">
             <section class="game-panel ai-panel">
               <div class="game-panel-title">
-                <span>🤖 AI助手</span>
+                <span>AI助手</span>
                 <label class="toggle">
                   <input id="ai-toggle" type="checkbox" checked>
                   <span></span>
@@ -202,6 +229,14 @@
               <p id="action-error" class="error-line" role="alert"></p>
             </section>
 
+            <section class="game-panel ranking-card">
+              <div class="game-panel-title">
+                <span>净盈亏排名</span>
+                <em>按带入筹码比较</em>
+              </div>
+              <div class="ranking-list"></div>
+            </section>
+
             <section class="game-panel chat-card game-chat-card">
               <div class="game-panel-title">
                 <span>聊天区</span>
@@ -218,7 +253,7 @@
 
         <section id="showdown-modal" class="showdown-backdrop hidden" aria-live="polite">
           <div class="showdown-dialog">
-            <div class="showdown-trophy">♛</div>
+            <div class="showdown-trophy">♠</div>
             <h2>本手牌结束</h2>
 
             <div class="showdown-section">
@@ -253,6 +288,6 @@
     <script>
       window.HOLDEM_ROOM_CODE = "{{ room_code }}";
     </script>
-    <script src="/static/js/room.js?v=20260609-06" defer></script>
+    <script src="/static/js/room.js?v=20260610-01" defer></script>
   </body>
 </html>
